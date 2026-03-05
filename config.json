@@ -1,0 +1,22 @@
+{
+    "Dify": {
+        "url": "http://127.0.0.1/",
+        "knowledge_Authorization": "dataset-XXXXXX",
+        "chat_Authorization": "app-XXXXXXXXXXXXXXX",
+        "Custom": false,
+        "rule": {
+            "indexing_technique": "high_quality",
+            "doc_form": "text_model",
+            "doc_language":"中文",
+            "embedding_model": "embedding-3",
+            "model_provider": "langgenius/zhipuai/zhipuai",
+            "embedding_available": true
+        }
+        
+    },
+    "QAmanager": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "chatmodel": "glm-4.6",
+        "api_key": "XXXXXXXXXXXXXXXXXXXXX"
+    }
+}
