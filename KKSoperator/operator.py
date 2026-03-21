@@ -49,7 +49,7 @@ class DifyOperator(Operator):
         data = requests.get(url, headers=self.header,data=json.dumps(data))
         output = {}
         for item in data.json()['data']:
-            output[item['name']] = item['id']
+            output[item['name']] = {"id":item['id'],"doc_form":item['doc_form']}
         if data.json()['total'] > 50:
             for page in range(2, data.json()['total'] // 50 + 2):
                 data = {
@@ -58,7 +58,7 @@ class DifyOperator(Operator):
                 }
                 data = requests.get(url, headers=self.header,data=json.dumps(data))
                 for item in data.json()['data']:
-                    output[item['name']] = item['id']
+                    output[item['name']] = {"id":item['id'],"doc_form":item['doc_form']}
         return output
 
 
@@ -84,6 +84,7 @@ class DifyOperator(Operator):
                 for item in data.json()['data']:
                     if item['name'] == name:
                         return item['id'], item['doc_form']
+        return None, None
     
     def get_documents(self, knowledgeid: str, rule: dict = None):
         url = f"http://127.0.0.1/v1/datasets/{knowledgeid}/documents"
@@ -116,9 +117,9 @@ class DifyOperator(Operator):
         data = requests.post(url, headers=self.header,data=json.dumps(data))
         print("插入数据")
         print(data.json())
-        segments = self.get_segments(knowledgeid, data.json()['document']['id'], ifcreate)
+        # segments = self.get_segments(knowledgeid, data.json()['document']['id'], ifcreate)
         print("开始删除")
-        self.delete_segment(knowledgeid, data.json()['document']['id'], segments)
+        # self.delete_segment(knowledgeid, data.json()['document']['id'], segments)
         return data.json()['document']['id']
 
     def get_segments(self, knowledgeid: str, documentid: str, ifcreate: bool = False):
@@ -130,7 +131,6 @@ class DifyOperator(Operator):
         while True:
             url = f"http://127.0.0.1/v1/datasets/{knowledgeid}/documents/{documentid}/segments?page={params['page']}&limit={params['limit']}"
             data = requests.get(url, headers=self.header)
-            print(data.json())
             for item in data.json()['data']:
                 output.append(item['id'])
             if data.json()['total'] >= params['page'] * params['limit']:
@@ -238,6 +238,7 @@ class DifyOperator(Operator):
     def Init(self, knowledgeName: str, rule: dict = None):
         knowledgeid, doc_form = self.get_knowledgeid_by_name(name=knowledgeName)
         if knowledgeid is None:
+            raise ValueError(f"Knowledge {knowledgeName} not found")
             knowledgeid = self.create_knowledge(name=knowledgeName)['id']
         documents = self.get_documents(knowledgeid=knowledgeid, rule=rule)
         unconfirmedid = documents['未确认']
