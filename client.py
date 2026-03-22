@@ -166,16 +166,16 @@ class WX_moniter():
             return
         if doc_form == 'qa_model' and self.config['Dify']['Custom']:
             Input = []
-            for index, row in tqdm(data.iterrows()):
-                Input.append({"question": row['question'], "answer": row['answer']})
+            for index in tqdm(range(len(data))):
+                Input.append({"question": data.iloc[index]['question'], "answer": data.iloc[index]['answer']})
                 if len(Input) == 100:
                     operator.insert_segment(knowledgeid=knowledgeid, documentid=KnowledgeInfo['confirmedid'], contents=Input, QA=True)
                     Input = []
             operator.insert_segment(knowledgeid=knowledgeid, documentid=KnowledgeInfo['confirmedid'], contents=Input, QA=True)
         elif doc_form == 'text_model' and not self.config['Dify']['Custom']:
             Input = []
-            for index, row in tqdm(data.iterrows()):
-                Input.append("问题："+row['question']+"\n"+"答案："+row['answer'])
+            for index in tqdm(range(len(data))):
+                Input.append("问题："+data.iloc[index]['question']+"\n"+"答案："+data.iloc[index]['answer'])
                 if len(Input) == 100:
                     operator.insert_segment(knowledgeid=knowledgeid, documentid=KnowledgeInfo['confirmedid'], contents=Input, QA=False)
                     Input = []
@@ -188,6 +188,16 @@ class WX_moniter():
         operator = DifyOperator(Authorization=self.config['Dify']['knowledge_Authorization'])
         return operator.get_knowledges()
     
+    def delete_knowledge(self, knowledgeName:str):
+        operator = DifyOperator(Authorization=self.config['Dify']['knowledge_Authorization'])
+        knowledgeid, doc_form = operator.get_knowledgeid_by_name(knowledgeName)
+        if knowledgeid is None:
+            print(f"知识库 {knowledgeName} 不存在")
+            return
+        operator.delete_knowledge(knowledgeid)
+        print(f"已成功删除知识库 {knowledgeName}，ID为 {knowledgeid}")
+
+
 parser = argparse.ArgumentParser(description='KKS')
 
 parser.add_argument('-n', '--name', type=str, default='robot_test', help='窗口名称')
@@ -201,6 +211,7 @@ parser.add_argument('--createknowledge', action='store_true', help='创建知识
 parser.add_argument('-i', '--Insert_data', action='store_true', help='插入数据')
 parser.add_argument('-f', '--File', type=str, default="Input.xlsx", help='输入文件')
 parser.add_argument('-a', '--get_all_knowledge', action='store_true', help='获取所有知识库')
+parser.add_argument('-rm','--remove_knowledge', action='store_true', help='删除知识库')
 
 
 
@@ -241,3 +252,9 @@ if args.get_all_knowledge:
     print("知识库名称 知识库ID 知识库模式")
     for item in data:
         print(item[0], item[1]['id'], "问答模式" if item[1]['doc_form']=='qa_model' else '通用模式')
+
+if args.remove_knowledge:
+    cilent = WX_moniter()
+    if args.knowledgeName is None:
+        parser.error("删除知识库时必须指定知识库名称，使用 -k 或 --knowledgeName 参数")
+    cilent.delete_knowledge(args.knowledgeName)
