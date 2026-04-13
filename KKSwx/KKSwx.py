@@ -11,6 +11,8 @@ from PIL import Image, ImageEnhance
 from rapidocr import RapidOCR
 import numpy as np
 import os
+import random
+
 
 class KKSWx():
     def __init__(self):
@@ -27,7 +29,8 @@ class KKSWx():
         # 创建任务队列
         queue = await self.manager.create_queue(f"task_queue_{hwnd}")
         app = Desktop(backend="uia").window(handle=hwnd)
-        if app:
+        ui = self.get_UI_childern(app)
+        if ui:
             print("启动UI模式")
             self.version = self.judge_version(app)
             monitor_task = asyncio.create_task(
@@ -102,49 +105,96 @@ class KKSWx():
 
     async def monitor_OCR(self,hwnd:int,queue:QueueManager):
         
-        ocr = self.loadmodel()
+        self.loadmodel()
+        
         GPU = True
         while True:
-            if GPU:
-                screenshot = self.phandler.capture_win_alt(hwnd = hwnd)
-            else:
-                screenshot = self.phandler.capture_window(hwnd)
-            results = self.identify(self.model_avatar, screenshot)
-            if len(results) == 0:
-                GPU = not GPU
+            try:
+                self.phandler.set_window_activte(hwnd)
+                if GPU:
+                    screenshot = self.phandler.capture_win_alt(hwnd = hwnd)
+                else:
+                    screenshot = self.phandler.capture_window(hwnd)
+                results = self.identify(self.model_avatar, screenshot)
+                if len(results) == 0:
+                    GPU = not GPU
+                    continue
+                answer_list = []
+                text_area = []
+                ban_area = []
+                for i,box in enumerate(results[0].boxes):
+                    if box.cls == 0:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        text_area.append((x1, y1, x2, y2))
+                    elif box.cls == 4:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        ban_area.append((x1, y1, x2, y2))
+                    elif box.cls == 3:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        Input = (x1, y1, x2, y2)
+
+                input_area = []
+                for text in text_area:
+                    is_input = []
+                    for ban in ban_area:                    
+                        if ban[0] > text[0] and ban[1] > text[1] and ban[2] < text[2] and ban[3] < text[3]:
+                            is_input.append(ban)
+                    input_area.append((text,is_input))
+                
+                input_area.sort(key=lambda x: x[0][1])
+
+                for text,is_input in input_area:
+                    x1, y1, x2, y2 = text
+                    if is_input:
+                        area = 0
+                        minx = 10000
+                        miny = 10000
+                        maxx = 0
+                        maxy = 0
+                        for ban in is_input:
+                            area += abs(ban[2] - ban[0]) * abs(ban[3] - ban[1])
+                            minx = min(minx, ban[0])
+                            miny = min(miny, ban[1])
+                            maxx = max(maxx, ban[2])
+                            maxy = max(maxy, ban[3])
+                        if abs(x2 - x1) * abs(y2 - y1) * 0.8 <= area:
+                            continue
+                        if abs(minx - x1) < abs(x2 -maxx):
+                            self.phandler.send_click_pywin32(hwnd, (maxx + x2) // 2, (maxy + y2) // 2)
+                        else:
+                            print("点击左侧")
+                            self.phandler.send_click_pywin32(hwnd, (minx + x1) // 2, (miny + y1) // 2)
+                        await asyncio.sleep(0.1)
+                    else:
+                        self.phandler.send_click_pywin32(hwnd, (x1 + x2) // 2, (y1 + y2) // 2)
+                        await asyncio.sleep(0.1)
+                    self.phandler.select_all()
+                    await asyncio.sleep(0.1)
+                    self.phandler.copy()
+                    await asyncio.sleep(0.1)
+                    self.phandler.send_click_pywin32(hwnd, x2+20, (y1 + y2) // 2)
+                    await asyncio.sleep(0.1)
+                    
+                    answer_list.append(self.phandler.get_clipboard_text())
+
+                if len(results[0].boxes) == 0:
+                    print('box not found')
+                    screenshot.save('screa.png')
+                    self.phandler.trigger_paint(hwnd)
+
+
+                # text_area.sort(key=lambda x: x[0])
+                # print(text_area)
+
+                
+                Chatlist = [x for x in answer_list]
+                Usernames = ['None' for x in answer_list]
+
+                await self.detectnew_by_OCR(Chatlist, Usernames, queue)
+                await asyncio.sleep(5)
+            except Exception as e:
+                print(e)
                 continue
-            answer_list = []
-            for i,box in enumerate(results[0].boxes):
-                if box.cls == 5:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                elif box.cls == 4:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    Bubble_name = np.array(screenshot)[y1-25:y1,x1:x2]
-                    try:
-                        enhancer = ImageEnhance.Contrast(Image.fromarray(Bubble_name))
-                    except:
-                        Image.fromarray(Bubble_name).save('test.png')
-                    enhanced_img = enhancer.enhance(2.0)
-                    names = ocr(enhanced_img).txts
-                    if names is None:
-                        continue
-                    Username = ' '.join(names) if isinstance(names, tuple) else ''
-                    crop_img = np.array(screenshot)[y1:y2,x1:x2]
-                    texts = ocr(crop_img).txts
-                    result = ''.join(texts) if isinstance(texts, tuple) else ''
-                    answer_list.append((y1, result, Username))
-
-            if len(results[0].boxes) == 0:
-                print('box not found')
-                screenshot.save('screa.png')
-                self.phandler.trigger_paint(hwnd)
-
-            answer_list.sort(key=lambda x: x[0])
-            Chatlist = [x[1] for x in answer_list]
-            Usernames = [x[2] for x in answer_list]
-
-            await self.detectnew_by_OCR(Chatlist, Usernames, queue)
-            await asyncio.sleep(5)
 
     def identify(self, model, img):
         '''
@@ -161,15 +211,15 @@ class KKSWx():
         10 = 'history'
         11 = 'url'
         '''
-        model_results = model.predict(img, save=False, verbose=False)
+        model_results = model.predict(img, save=True, verbose=False)
         return model_results
 
 
     def loadmodel(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        # self.model_avatar =  YOLO(os.path.join(base_dir,r"KKShandler\handlermodel\best.pt"))
-        self.model_avatar =  YOLO(os.path.join(base_dir,r"best.pt"))
-        return RapidOCR(config_path=os.path.join(base_dir,r"config.yaml"))
+        self.model_avatar =  YOLO(os.path.join(base_dir,r"KKShandler\handlermodel\best.pt"))
+        # self.model_avatar =  YOLO(os.path.join(base_dir,r"best.pt"))
+        # return RapidOCR(config_path=os.path.join(base_dir,r"config.yaml"))
 
     def cleanup(self):
         self.stop_event.set()

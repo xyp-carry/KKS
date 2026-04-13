@@ -11,7 +11,8 @@
             "embedding_model": "embedding-3",
             "model_provider": "langgenius/zhipuai/zhipuai",
             "embedding_available": true
-        }
+        },
+        "cite":true
         
     },
     "QAmanager": {

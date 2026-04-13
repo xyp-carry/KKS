@@ -39,9 +39,12 @@ class WX_moniter():
                             res = operator.query(knowledgeid=difyId['knowledgeid'], query=data[1].replace(label,''))
                             context = ' '.join([item['segment']['content']+ (item['segment']['answer'] if item['segment']['answer'] else '') for item in res['records']])
                             print(context)
-                            answer = await qa.rag(data[1],context)
+                            answer = await qa.rag(data[1],context,self.config['Dify']['cite'])
+                            print(answer)
                             if answer['Haveanswer'] and answer['Cananswer']:
                                 qa.add_question(data[1].replace(label,''),answer['answer'],'AI')
+                                if self.config['Dify']['cite']:
+                                    answer['answer'] += f" --引用来源：{','.join(answer['cite'])} 无登录访问方法:https://piazza.com/demo_login?nid=i5j09fnsl7k5x0&auth=b2410d0"
                             elif not answer['Haveanswer'] and answer['Cananswer']:
                                 qa.add_question(data[1].replace(label,''),answer['answer'],'AI')
                                 answer['answer'] += ' --由AI生成'
@@ -54,6 +57,7 @@ class WX_moniter():
                                 wx.send_message(hwnd, answer['answer'])
                     print("收到消息:",data[0],data[1])
             except Exception as e:
+                print("异常:", e)
                 if wx.version == "4.1.7":
                     wx.send_message_4(hwnd, "AI正忙请重新提问")
                 else:

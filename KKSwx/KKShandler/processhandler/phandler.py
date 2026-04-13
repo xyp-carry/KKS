@@ -10,7 +10,7 @@ import win32ui
 from ctypes import windll
 import numpy as np
 import cv2
-
+import pyperclip
 
 class RECT(ctypes.Structure):
         _fields_ = [
@@ -585,6 +585,33 @@ class phandler():
     def set_window_show(self, hwnd):
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
 
+
+    def set_window_activte(self, hwnd):
+        if not win32gui.IsWindow(hwnd):
+            return False
+        
+        # 1. 如果窗口是最小化状态，必须先还原（这步你之前做了，很对）
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            time.sleep(0.2)  # 关键：给 Windows 一点时间渲染窗口 UI
+
+        # 2. 核心黑科技：通过模拟按下 Alt 键，临时解除当前进程的前台锁定限制
+        # 这会欺骗系统，让系统认为当前进程正在与用户交互
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)  # 按下 Alt 键
+        time.sleep(0.05)
+        
+        # 3. 尝试将窗口提前并设置前台
+        win32gui.SetForegroundWindow(hwnd)
+        
+        # 4. 松开 Alt 键
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+        
+        # 5. 双重保险：再次置顶
+        win32gui.BringWindowToTop(hwnd)
+    
+        return True
+
+
     def set_window_pos(self, hwnd, x, y, width, height):
         win32gui.SetWindowPos(
             hwnd, 
@@ -592,3 +619,6 @@ class phandler():
             x, y, width, height, 
             win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW
         )
+
+    def get_clipboard_text(self):
+        return pyperclip.paste()

@@ -4,6 +4,7 @@ import os
 import uuid
 import httpx
 import asyncio
+import re
 
 class QAmanager:
     def __init__(self, 
@@ -175,6 +176,10 @@ class QAmanager:
 
     def textformat(self, text:str):
         content_str = text.decode('utf-8') if isinstance(text, bytes) else text
+        if "```json" in content_str:
+            content_str = content_str.replace("```json","")
+            content_str = content_str.replace("```","")
+
         content_str = content_str.replace('，', ',').replace('：', ':').replace('（', '(').replace('）', ')').replace('true', 'True').replace('false', 'False').replace('null', 'None')
         return content_str
 
@@ -185,29 +190,57 @@ class QAmanager:
         return self.conversation_history
 
 
-    async def rag(self, query:str, context:str):
-        GENERATE_PROMPT = ("""
-            ### 角色设定
-            你是一个群聊助手，请以自然、像真人一样的语气回答问题，避免使用“根据上下文”、“根据提供的文档”等机械性措辞。
+    async def rag(self, query:str, context:str, cite:bool=False):
+        
+        if not cite:
+            GENERATE_PROMPT = """
+                ### 角色设定
+                你是一个严谨的专家级助手。请以专家一样的语气回答问题，避免使用“根据上下文”、“根据提供的文档”等引用措辞。我会给你一些知识块和聊天记录，你需要根据这些信息回答问题，并在找不出答案时尝试利用自己训练的数据进行回答。
 
-            ### 任务规则
-            1. **依据上下文**：仅利用检索到的上下文信息和给出的聊天内容回答问题。
-            2. **诚实原则**：如果上下文中和聊天记录中没有答案，如果是你有能力回答的问题(Haveanswer为False,Cananswer为True)，如果没能力回答则直接回答“我不知道”(Haveanswer为False,Cananswer为False)，不要编造。
-            3. **格式要求**：请严格控制回答长度，不超过三句话，保持简洁。
-            4. **回答原则**：如果历史记录中包含相关问题的回答，优先使用历史记录的回答。
-            5. **代词消解**：如果问题中包含代词（如“它”、“这个”等），请根据上下文进行消解，避免使用代词，尤其是本次本期这种时间代词请严格按照当前时间判断，如果上下文中的时间不正确则可以给出总结让他人进行参考。
+                ### 任务规则
+                1. **依据内容**：利用检索到的上下文信息和给出的聊天内容回答问题，若有答案将Haveanswer设置为True，若无答案将Haveanswer设置为False，无答案时需要尝试以自己训练的数据进行回答,如果可以回答则Cananswer设置为True,如果不能回答则Cananswer设置为False。
+                2. **诚实原则**：不要编造，严格按照第一条规则进行回答。
+                3. **回答要求**：请严格控制回答长度，不超过三句话，保持简洁，同时以json形式输出。
+                4. **聊天记录优先**：如果历史记录中包含相关问题的回答，优先使用历史记录的回答。
+                5. **代词消解**：如果问题中包含代词（如“它”、“这个”等），请根据上下文进行消解，避免使用代词，尤其是本次本期这种时间代词请严格按照当前时间判断，如果上下文中的时间不正确则可以给出总结让他人进行参考。
+                6. 每个引用文档中的来源信息都不要被提炼到answer中。
 
-            ### 输出格式
-            请直接返回一个单行或格式化的 JSON 对象字符串，不要添加任何其他解释性文字或 Markdown 符号。
-            请务必严格按照以下 JSON 格式输出，不要包含其他多余文字：
-            {{
-                "answer": "这里填写你的回答",
-                "Haveanswer": True/False,
-                "Cananswer": True/False
-            }}
-            
-                           """
-        )
+                ### 输出格式
+                请直接返回一个单行或格式化的 JSON 对象字符串。
+                请务必严格按照以下 JSON 格式输出，不要包含其他多余文字, 不要出现markdown形式，只要可以被python识别的json字符串：
+                {{
+                    "answer": "这里填写你的回答",
+                    "Haveanswer": True/False,
+                    "Cananswer": True/False
+                }}
+                
+                            """
+        else:
+            GENERATE_PROMPT = """
+                ### 角色设定
+                你是一个严谨的专家级助手。请以专家一样的语气回答问题，避免使用“根据上下文”、“根据提供的文档”等引用措辞。我会给你一些知识块和聊天记录，你需要根据这些信息回答问题，并在找不出答案时尝试利用自己训练的数据进行回答。
+
+                ### 任务规则
+                1. **依据内容**：利用检索到的上下文信息和给出的聊天内容回答问题，若有答案将Haveanswer设置为True，若无答案将Haveanswer设置为False，无答案时需要尝试以自己训练的数据进行回答,如果可以回答则Cananswer设置为True,如果不能回答则Cananswer设置为False。
+                2. **诚实原则**：不要编造，严格按照第一条规则进行回答。
+                3. **回答要求**：请严格控制回答长度，不超过三句话，保持简洁，同时以json形式输出。
+                4. **聊天记录优先**：如果历史记录中包含相关问题的回答，优先使用历史记录的回答。
+                5. **代词消解**：如果问题中包含代词（如“它”、“这个”等），请根据上下文进行消解，避免使用代词，尤其是本次本期这种时间代词请严格按照当前时间判断，如果上下文中的时间不正确则可以给出总结让他人进行参考。
+                6. **引用来源**：如果答案来自于上下文，请在回答中引用上下文的来源，上下文的来源为文档最后的网页链接，以“（来源：链接）”的格式表示，这样的链接也可能不存在(不存在链接但回答有依据该文档则返回一个空字符串"")，最后的输出以list形式返回，若没有引用则为空list。
+                7. 每个引用文档中的来源信息绝对不可以出现在answer中，只能在cite字段中出现。
+
+                ### 输出格式
+                请直接返回一个单行或格式化的 JSON 对象字符串。
+                请务必严格按照以下 JSON 格式输出，不要包含其他多余文字, 不要出现markdown形式，只要可以被python识别的json字符串：
+                {{
+                    "answer": "这里填写你的回答",
+                    "Haveanswer": True/False,
+                    "Cananswer": True/False,
+                    "cite": [引用来源1,引用来源2,...]
+                }}
+                
+            """
+
         Input_PROMPT = """
         ### 输入信息
         - 当前时间：{time}
@@ -234,14 +267,20 @@ class QAmanager:
         # QAdata_file = os.path.join(QAdata_dir, str(uuid.uuid4())+f"{str(currenttime)}.json")
         # with open(QAdata_file, 'a', encoding='utf-8') as f:
         #     f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        print(response['content'])
         content_str = self.textformat(response['content'])
+        
+        res = eval(content_str)
 
-        return eval(content_str)
+        #去掉answer中的来源信息
+        pattern = r'\(来源:.*?\)'
+        res['answer'] = re.sub(pattern, '', res['answer'])
+        return res
 
     def answer_without_context(self,query:str):
         GENERATE_PROMPT = """
         # Role
-        你是一个严谨的专家级助手。你的任务是根据提供的【对话上下文】理解用户的真实意图，并利用你自身的专业知识回答问题。
+        你是一个严谨的专家级助手。你的任务是根据提供的【对话上下文】，并利用你自身的专业知识回答问题。
 
         # Execution Steps
         1. **意图理解**：首先阅读【对话上下文】，分析用户问题中的代词（如“它”、“他”、“这个”等）具体指代的是什么对象。如果无法从上下文中推断出指代对象，请直接回答“我无法回答：问题表述不清晰”。
@@ -337,43 +376,3 @@ class QAmanager:
         # self.questions = []
         # return qa_list
 
-# qamanager = QAmanager(base_url="https://open.bigmodel.cn/api/paas/v4/chat/completions", model="glm-4.6", api_key="b4a804d2412b4d8995742b5d55453ae5.zp2h4b5jHcNkSi6Z")
-# start = time.time()
-# print(qamanager.llm("你好")['content'])
-# print(time.time() - start)
-# print(qamanager.params)
-# import time
-# time_start = time.time()
-# a = qamanager.judge_model.invoke(f"现在需要做一些代词消解任务，现在的时间是{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}, 请把“本学期的考试时间”，转化成较为具体的搜索内容，直接给出结果就行")
-# print(a.content)
-# time_end = time.time()
-# print(time_end - time_start)
-# qamanager.add_question('互联网产品运营转什么职业比较好？ 能有壁垒的 有推荐的吗?')
-# qamanager.add_question('今年的苹果好吃么')
-# print(qamanager.questions)
-# qamanager.conversation_history = [('B','互联网产品运营转什么职业比较好？ 能有壁垒的 有推荐的吗?'),('A','有壁垒的有点难了0.0'),('A','一般去转策略产品、商业分析、策略运营'),('B','商业化广告挺好玩的'),('B','额 那还是那些'),('B','感觉就这几个来回跳'),('A','有壁垒和能跳过去'),('A','本来就是冲突的逻辑'),('A','总不能你跳的时候没壁垒，跳过去就有了别人进不来哈哈哈哈'),('A','那我就只能推荐ai大模型算法了')]
-
-# qamanager.add_answer_by_ai()
-# print(qamanager.questions)
-
-# print(qamanager.questions)
-# qamanager.add_question(question='请问今年的期末考试时间是多会儿呢?',answer='2026年5月15日',source='AI')
-# qamanager.add_question(question='那考试内容呢?',answer='考第五章到第八章',source='AI')
-# # qamanager.add_question(question='那考试内容呢?')
-# qamanager.conversation_history = [('B','请问今年的期末考试时间是多会儿呢'),('AI','2026年5月15日'),('B','今年考的这么早？'),('A','今年不是放假早么，所以考的早呗'),('B','那考试内容呢?'),('AI','考第五章到第八章'),('B','明白了'),('C','不对吧，我听老师说的是要考第九章内容'),('助教','确实'),("B","不是我问的是口试的内容"),("助教","口试只考第10章的内容")]
-
-
-# async def test():
-#     task1 =  asyncio.create_task(qamanager.update_data())
-#     print("开始了么2")
-#     await task1
-#     print(qamanager.questions)
-#     print("结束了么")
-
-# asyncio.run(test())
-# qamanager.judge_answer()
-
-# print(qamanager.questions)
-# qamanager.add_answer_by_ai()
-# print(qamanager.questions)
-# print(qamanager.CombineAnswer())

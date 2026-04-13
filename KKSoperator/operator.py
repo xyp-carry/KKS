@@ -100,8 +100,21 @@ class DifyOperator(Operator):
             output['已确认'] = id
         if '未确认' not in output:
             id = self.create_document(knowledgeid, "未确认", rule)
+            # self.disable_documents(knowledgeid, id)
             output['未确认'] = id
         return output
+    
+    def disable_documents(self, knowledgeid: str, documentid: str):
+        url = f"https://api.dify.ai/v1/datasets/{knowledgeid}/documents/status/disable"
+        payload = { "document_ids": [documentid] }
+        res = requests.patch(url, headers=self.header,json=payload)
+        print(res.json())
+    
+    def enable_documents(self, knowledgeid: str, documentid: str):
+        url = f"https://api.dify.ai/v1/datasets/{knowledgeid}/documents/status/enable"
+        payload = { "document_ids": [documentid] }
+        res = requests.patch(url, headers=self.header,json=json.dumps(payload))
+        print(res.json())
     
     def create_document(self, knowledgeid: str, name: str, rule: dict = None):
         url = f"http://127.0.0.1/v1/datasets/{knowledgeid}/document/create-by-text"
@@ -115,10 +128,8 @@ class DifyOperator(Operator):
         data['text'] = ""
 
         data = requests.post(url, headers=self.header,data=json.dumps(data))
-        print("插入数据")
         print(data.json())
         # segments = self.get_segments(knowledgeid, data.json()['document']['id'], ifcreate)
-        print("开始删除")
         # self.delete_segment(knowledgeid, data.json()['document']['id'], segments)
         return data.json()['document']['id']
 
@@ -149,13 +160,14 @@ class DifyOperator(Operator):
             print(res)
 
     def insert_segment(self, knowledgeid: str, documentid: str, contents: str, QA: bool = False):
-        print("开始插入")
         url = f"http://127.0.0.1/v1/datasets/{knowledgeid}/documents/{documentid}/segments"
         if QA:
             data = {"segments": [{"content": content['question'], "answer": content['answer']} for content in contents]}
         else:
             data = {"segments": [{"content": content} for content in contents]}
+        
         data = requests.post(url, headers=self.header,data=json.dumps(data))
+        print(data.json())
         return data.json()
     
     def create_knowledge(self, **kwargs):
@@ -189,6 +201,7 @@ class DifyOperator(Operator):
             else:
                 content = item['data']['content']
             contents.append(content)
+
         self.insert_segment(knowledgeid, transferee, contents, QA)
         self.delete_segment(knowledgeid, transferor, segmentids)
 
@@ -223,7 +236,7 @@ class DifyOperator(Operator):
         if retrieval_model is None:
             retrieval_model = {
                 "search_method":"hybrid_search",
-                "weights":0.6,
+                "weights":{"vector_weight":0.6,"keyword_weight":0.4},
                 "top_k":5,
                 "score_threshold_enabled":False,
                 "reranking_enable":False,
